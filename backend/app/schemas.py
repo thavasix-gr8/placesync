@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -24,3 +27,71 @@ class UserOut(BaseModel):
     arrears: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class StudentUpdate(BaseModel):
+    department: str | None = None
+    batch: str | None = None
+    cgpa: float | None = Field(default=None, ge=0, le=10)
+    arrears: int | None = Field(default=None, ge=0)
+
+
+class DriveCreate(BaseModel):
+    company: str
+    job_role: str
+    description: str
+    deadline: datetime
+    min_cgpa: float = Field(ge=0, le=10)
+    max_arrears: int = Field(ge=0)
+    allowed_departments: str = ""
+    batch: str = ""
+
+
+class DriveUpdate(BaseModel):
+    company: str | None = None
+    job_role: str | None = None
+    description: str | None = None
+    deadline: datetime | None = None
+    min_cgpa: float | None = Field(default=None, ge=0, le=10)
+    max_arrears: int | None = Field(default=None, ge=0)
+    allowed_departments: str | None = None
+    batch: str | None = None
+
+
+class DriveOut(DriveCreate):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApplicationOut(BaseModel):
+    id: int
+    student_id: int
+    drive_id: int
+    status: str
+    applied_at: datetime
+    drive: DriveOut
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApplicationApplicantOut(BaseModel):
+    id: int
+    student_id: int
+    drive_id: int
+    status: str
+    applied_at: datetime
+    student: UserOut
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApplicationStatusUpdate(BaseModel):
+    status: Literal["Applied", "Shortlisted", "Rejected", "Selected"]
+
+
+class StatsOut(BaseModel):
+    total_drives: int
+    total_applications: int
+    shortlisted: int
+    selected: int
