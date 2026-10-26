@@ -1,18 +1,39 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .auth import create_token, get_current_user, hash_password, verify_password
 from .database import Base, engine, get_db
-from .models import User
+from .migrations import upgrade_microsoft_identity
+from .models import MicrosoftIdentity, User
+from .microsoft_auth import (
+    check_microsoft_nonce,
+    issue_microsoft_nonce,
+    microsoft_settings,
+    verify_microsoft_id_token,
+)
 from .routes_applications import router as applications_router
 from .routes_drives import router as drives_router
 from .schemas import SignupRequest, UserOut
+from .schemas_auth import MicrosoftTokenRequest
 
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="PlaceSync API")
+def ensure_schema():
+    upgrade_microsoft_identity(engine.url.database)
+    Base.metadata.create_all(bind=engine)
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    ensure_schema()
+    yield
+
+
+app = FastAPI(title="PlaceSync API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,6 +84,82 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @app.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@app.post("/auth/microsoft/nonce")
+def microsoft_nonce(db: Session = Depends(get_db)):
+    microsoft_settings()
+    return {"nonce": issue_microsoft_nonce(db)}
+
+
+@app.post("/auth/microsoft/login")
+def microsoft_login(data: MicrosoftTokenRequest, db: Session = Depends(get_db)):
+    claims = verify_microsoft_id_token(data.id_token)
+    check_microsoft_nonce(claims, db, consume=False)
+    identity = db.query(MicrosoftIdentity).filter(
+        MicrosoftIdentity.tenant_id == claims["tid"].casefold(),
+        MicrosoftIdentity.object_id == claims["oid"],
+    ).first()
+    if identity is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Microsoft account is not linked. Sign in with your PlaceSync password to link it.",
+        )
+    user = identity.user
+    if user.role != "student":
+        raise HTTPException(status_code=403, detail="Microsoft sign-in is available to students only.")
+    check_microsoft_nonce(claims, db, consume=True)
+    return {"access_token": create_token(user), "token_type": "bearer", "role": "student"}
+
+
+@app.post("/auth/microsoft/link")
+def microsoft_link(
+    data: MicrosoftTokenRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    claims = verify_microsoft_id_token(data.id_token)
+    check_microsoft_nonce(claims, db, consume=False)
+    if current_user.role != "student":
+        raise HTTPException(status_code=403, detail="Only student accounts can link Microsoft sign-in.")
+
+    microsoft_email = claims.get("email")
+    if not isinstance(microsoft_email, str) or not microsoft_email.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Microsoft did not provide an email. Ask your college administrator to enable the email claim.",
+        )
+    if claims.get("email_verified") is False:
+        raise HTTPException(status_code=400, detail="Microsoft reports this email address as unverified.")
+    if microsoft_email.strip().casefold() != current_user.email.strip().casefold():
+        raise HTTPException(
+            status_code=400,
+            detail="Microsoft email must match your PlaceSync student email before linking.",
+        )
+
+    identity = db.query(MicrosoftIdentity).filter(
+        MicrosoftIdentity.tenant_id == claims["tid"].casefold(),
+        MicrosoftIdentity.object_id == claims["oid"],
+    ).first()
+    if identity and identity.user_id != current_user.id:
+        raise HTTPException(status_code=409, detail="This Microsoft account is already linked to another account.")
+    if current_user.microsoft_identity and current_user.microsoft_identity.object_id != claims["oid"]:
+        raise HTTPException(status_code=409, detail="This PlaceSync account already has a Microsoft account linked.")
+    check_microsoft_nonce(claims, db, consume=True)
+    if identity is None:
+        db.add(MicrosoftIdentity(
+            tenant_id=claims["tid"].casefold(), object_id=claims["oid"], user_id=current_user.id
+        ))
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="This Microsoft account was linked elsewhere. Please sign in again.") from exc
+    return {
+        "access_token": create_token(current_user),
+        "token_type": "bearer",
+        "role": "student",
+    }
 
 
 app.include_router(drives_router)

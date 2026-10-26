@@ -1,5 +1,6 @@
 backend/venv/
 backend/placesync.db
+backend/placesync.db.pre_microsoft.*.bak
 __pycache__/
 *.py[cod]
 node_modules/

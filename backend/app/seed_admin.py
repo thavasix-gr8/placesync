@@ -1,9 +1,11 @@
 from .auth import hash_password
 from .database import Base, SessionLocal, engine
+from .migrations import upgrade_microsoft_identity
 from .models import User
 
 
 def create_admin():
+    upgrade_microsoft_identity(engine.url.database)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:

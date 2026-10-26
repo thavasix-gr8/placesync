@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -21,6 +21,26 @@ class User(Base):
     arrears = Column(Integer, nullable=False, default=0)
 
     applications = relationship("Application", back_populates="student")
+    microsoft_identity = relationship("MicrosoftIdentity", back_populates="user", uselist=False)
+
+
+class MicrosoftIdentity(Base):
+    __tablename__ = "microsoft_identities"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String, nullable=False)
+    object_id = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "object_id"),)
+    user = relationship("User", back_populates="microsoft_identity")
+
+
+class MicrosoftAuthNonce(Base):
+    __tablename__ = "microsoft_auth_nonces"
+
+    nonce = Column(String, primary_key=True)
+    expires_at = Column(DateTime, nullable=False)
 
 
 class Drive(Base):

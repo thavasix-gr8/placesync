@@ -3,7 +3,9 @@ from datetime import datetime, timedelta
 from . import models
 from .auth import hash_password
 from .database import SessionLocal, engine
+from .migrations import upgrade_microsoft_identity
 
+upgrade_microsoft_identity(engine.url.database)
 models.Base.metadata.create_all(bind=engine)
 
 db = SessionLocal()
