@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from .auth import require_admin, require_student
 from .database import get_db
-from .eligibility import check_eligibility
-from .models import Application, Drive, StudentResume, User
+from .eligibility import application_deadline_passed, check_eligibility
+from .models import Application, Drive, Notification, StudentResume, User
 from .schemas import (
     ApplicationApplicantOut,
     ApplicationOut,
@@ -41,9 +41,25 @@ def csv_cell(value) -> str:
     return text
 
 
+def make_status_notification(application: Application) -> Notification:
+    status_text = application.status.lower()
+    company = application.drive.company
+    if status_text == "shortlisted":
+        message = f"You were shortlisted for {company}."
+    elif status_text == "selected":
+        message = f"You were selected for {company}."
+    elif status_text == "rejected":
+        message = f"Your application to {company} was rejected."
+    else:
+        message = f"Your application status for {company} is now {application.status}."
+    return Notification(user_id=application.student_id, message=message)
+
+
 @router.post("/drives/{drive_id}/apply", response_model=ApplicationOut, status_code=status.HTTP_201_CREATED)
 def apply_to_drive(drive_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_student)):
     drive = get_drive_or_404(drive_id, db)
+    if application_deadline_passed(drive.deadline):
+        raise HTTPException(status_code=400, detail="Applications for this drive are closed.")
     eligible, reasons = check_eligibility(current_user, drive)
     if not eligible:
         raise HTTPException(status_code=400, detail={"message": "Not eligible", "reasons": reasons})
@@ -88,6 +104,43 @@ def get_my_applications(db: Session = Depends(get_db), current_user: User = Depe
     return db.query(Application).filter(Application.student_id == current_user.id).order_by(Application.applied_at.desc()).all()
 
 
+@router.delete("/applications/{application_id}")
+def withdraw_application(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_student),
+):
+    application = db.query(Application).filter(
+        Application.id == application_id,
+        Application.student_id == current_user.id,
+    ).first()
+    if application is None:
+        raise HTTPException(status_code=404, detail="Application not found.")
+    if application.status != "Applied":
+        raise HTTPException(
+            status_code=400,
+            detail="Only applications with Applied status can be withdrawn.",
+        )
+    if application_deadline_passed(application.drive.deadline):
+        raise HTTPException(status_code=400, detail="Applications for this drive are closed.")
+
+    drive = application.drive
+    try:
+        db.delete(application)
+        db.flush()
+        drive.applicant_count = db.query(Application).filter(
+            Application.drive_id == drive.id
+        ).count()
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Your application could not be withdrawn. Please try again.",
+        ) from exc
+    return {"message": "Application withdrawn."}
+
+
 @router.get("/drives/{drive_id}/applications", response_model=list[ApplicationApplicantOut])
 def get_drive_applications(drive_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
     get_drive_or_404(drive_id, db)
@@ -99,9 +152,16 @@ def update_application_status(application_id: int, data: ApplicationStatusUpdate
     application = db.query(Application).filter(Application.id == application_id).first()
     if application is None:
         raise HTTPException(status_code=404, detail="Application not found")
+    changed = application.status != data.status
     application.status = data.status
-    db.commit()
-    db.refresh(application)
+    try:
+        if changed:
+            db.add(make_status_notification(application))
+        db.commit()
+        db.refresh(application)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Application status could not be updated.") from exc
     return application
 
 
@@ -150,8 +210,13 @@ def update_drive_applications_status(
     if len(applications) != len(application_ids):
         raise HTTPException(status_code=404, detail="One or more applications were not found for this drive.")
     try:
+        notifications = []
         for application in applications:
+            changed = application.status != data.status
             application.status = data.status
+            if changed:
+                notifications.append(make_status_notification(application))
+        db.add_all(notifications)
         db.commit()
     except Exception as exc:
         db.rollback()

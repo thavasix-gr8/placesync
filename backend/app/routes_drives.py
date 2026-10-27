@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from .auth import get_current_user, require_admin, require_student
 from .database import get_db
-from .eligibility import check_eligibility
+from .eligibility import application_deadline_passed, check_eligibility
 from .models import Application, Drive, User
 from .schemas import DriveCreate, DriveOut, DriveUpdate, StudentUpdate, UserOut
 
@@ -38,6 +38,7 @@ def get_drives(db: Session = Depends(get_db), current_user: User = Depends(get_c
         drive_data = DriveOut.model_validate(drive).model_dump(mode="json")
         drive_data["eligible"] = eligible
         drive_data["reasons"] = reasons
+        drive_data["application_closed"] = application_deadline_passed(drive.deadline)
         results.append(drive_data)
     return results
 

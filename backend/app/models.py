@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -23,6 +23,10 @@ class User(Base):
     applications = relationship("Application", back_populates="student")
     microsoft_identity = relationship("MicrosoftIdentity", back_populates="user", uselist=False)
     resumes = relationship("StudentResume", back_populates="student")
+    notifications = relationship("Notification", back_populates="user")
+    created_announcements = relationship(
+        "Announcement", back_populates="created_by", foreign_keys="Announcement.created_by_id"
+    )
 
 
 class MicrosoftIdentity(Base):
@@ -42,6 +46,32 @@ class MicrosoftAuthNonce(Base):
 
     nonce = Column(String, primary_key=True)
     expires_at = Column(DateTime, nullable=False)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    message = Column(String, nullable=False)
+    is_read = Column(Boolean, nullable=False, default=False, server_default="0")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="notifications")
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    drive_id = Column(Integer, ForeignKey("drives.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    created_by = relationship("User", back_populates="created_announcements", foreign_keys=[created_by_id])
+    drive = relationship("Drive", back_populates="announcements")
 
 
 class StudentResume(Base):
@@ -74,6 +104,7 @@ class Drive(Base):
 
     applications = relationship("Application", back_populates="drive")
     created_by = relationship("User", foreign_keys=[created_by_id])
+    announcements = relationship("Announcement", back_populates="drive")
 
 
 class Application(Base):

@@ -2,8 +2,11 @@ backend/venv/
 backend/placesync.db
 backend/placesync.db.pre_microsoft.*.bak
 backend/placesync.db.pre_resume.*.bak
+backend/placesync.db.pre_student_updates.*.bak
+backend/placesync.db.pre_bookmarks.*.bak
 backend/private_uploads/
 __pycache__/
 *.py[cod]
 node_modules/
 .env
+backend/placesync.db.pre_*.bak

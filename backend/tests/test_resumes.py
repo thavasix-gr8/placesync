@@ -188,6 +188,23 @@ def test_apply_without_resume_does_not_create_an_application(data):
     assert data["drive"].applicant_count == 0
 
 
+def test_apply_is_open_until_end_of_deadline_day_and_closed_afterward(data):
+    db, drive, student = data["db"], data["drive"], data["student"]
+    upload(db, student)
+    drive.deadline = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    db.commit()
+    same_day_application = apply_to_drive(drive.id, db, student)
+    assert same_day_application.student_id == student.id
+
+    next_drive = data["second_drive"]
+    next_drive.deadline = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+    db.commit()
+    with pytest.raises(HTTPException) as closed:
+        apply_to_drive(next_drive.id, db, student)
+    assert closed.value.status_code == 400
+    assert closed.value.detail == "Applications for this drive are closed."
+
+
 def test_failed_apply_rolls_back_application_and_drive_count(data):
     db, drive, student = data["db"], data["drive"], data["student"]
     upload(db, student)

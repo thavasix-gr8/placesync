@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 
 def check_eligibility(student, drive):
@@ -6,20 +6,25 @@ def check_eligibility(student, drive):
     reasons = []
 
     if student.cgpa < drive.min_cgpa:
-        reasons.append(f"CGPA {student.cgpa:g} is below the required {drive.min_cgpa:g}")
+        reasons.append(f"CGPA below {drive.min_cgpa:g}")
     if student.arrears > drive.max_arrears:
-        reasons.append(f"Arrears {student.arrears} exceed the allowed {drive.max_arrears}")
+        reasons.append(f"Arrears above the limit (max {drive.max_arrears})")
 
     if drive.allowed_departments:
         departments = [item.strip() for item in drive.allowed_departments.split(",")]
         if student.department not in departments:
-            reasons.append(f"Department {student.department} is not eligible for this drive")
+            reasons.append("Department not eligible")
 
     if drive.batch and student.batch != drive.batch:
-        reasons.append(f"Batch {student.batch} does not match the required {drive.batch}")
+        reasons.append("Batch not eligible")
 
-    now = datetime.now(timezone.utc) if drive.deadline.tzinfo else datetime.now()
-    if drive.deadline <= now:
-        reasons.append("The application deadline has passed")
+    if application_deadline_passed(drive.deadline):
+        reasons.append("Applications closed")
 
     return len(reasons) == 0, reasons
+
+
+def application_deadline_passed(deadline):
+    """A drive stays open for the whole calendar date shown as its deadline."""
+    now = datetime.now(deadline.tzinfo) if deadline.tzinfo else datetime.now()
+    return now.date() > deadline.date()

@@ -51,8 +51,6 @@ def upgrade_microsoft_identity(database_path: str) -> str | None:
         )
         connection.commit()
     return str(backup_path)
-
-
 def upgrade_resume_feature(database_path: str) -> str | None:
     """Add resume versions and applicant counts without removing existing data."""
     path = Path(database_path)
@@ -169,4 +167,85 @@ def upgrade_resume_feature(database_path: str) -> str | None:
     with sqlite3.connect(path) as connection:
         if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise RuntimeError("The resume schema upgrade did not pass integrity_check.")
+    return str(backup_path)
+
+
+def upgrade_student_updates(database_path: str) -> str | None:
+    """Add notifications and announcements after taking a verified backup."""
+    path = Path(database_path)
+    if not path.exists():
+        return None
+
+    with sqlite3.connect(path) as connection:
+        tables = {
+            row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        if not {"users", "drives"}.issubset(tables):
+            return None
+        if {"notifications", "announcements"}.issubset(tables):
+            return None
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup_path = path.with_name(path.name + f".pre_student_updates.{stamp}.bak")
+    with sqlite3.connect(path) as source, sqlite3.connect(backup_path) as backup:
+        source.backup(backup)
+    with sqlite3.connect(path) as source, sqlite3.connect(backup_path) as backup:
+        source_counts = {
+            row[0]: source.execute(f'SELECT COUNT(*) FROM "{row[0]}"').fetchone()[0]
+            for row in source.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        backup_counts = {
+            row[0]: backup.execute(f'SELECT COUNT(*) FROM "{row[0]}"').fetchone()[0]
+            for row in backup.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        integrity = backup.execute("PRAGMA integrity_check").fetchone()[0]
+    if integrity != "ok" or source_counts != backup_counts:
+        raise RuntimeError("The pre-notifications backup could not be verified.")
+
+    with sqlite3.connect(path) as connection:
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS notifications (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    message VARCHAR NOT NULL,
+                    is_read BOOLEAN NOT NULL DEFAULT 0,
+                    created_at DATETIME NOT NULL,
+                    FOREIGN KEY(user_id) REFERENCES users(id)
+                )"""
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_notifications_user_id ON notifications(user_id)"
+            )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS announcements (
+                    id INTEGER PRIMARY KEY,
+                    title VARCHAR NOT NULL,
+                    message TEXT NOT NULL,
+                    created_by_id INTEGER NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    drive_id INTEGER,
+                    FOREIGN KEY(created_by_id) REFERENCES users(id),
+                    FOREIGN KEY(drive_id) REFERENCES drives(id) ON DELETE SET NULL
+                )"""
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_announcements_created_by_id "
+                "ON announcements(created_by_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_announcements_drive_id ON announcements(drive_id)"
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+
+    with sqlite3.connect(path) as connection:
+        if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise RuntimeError("The student updates migration did not pass integrity_check.")
     return str(backup_path)

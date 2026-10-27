@@ -6,9 +6,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .auth import create_token, get_current_user, hash_password, verify_password
+from .auth import create_token, get_current_user, hash_password, require_student, verify_password
 from .database import Base, engine, get_db
-from .migrations import upgrade_microsoft_identity, upgrade_resume_feature
+from .migrations import (
+    upgrade_microsoft_identity,
+    upgrade_resume_feature,
+    upgrade_student_updates,
+)
 from .models import MicrosoftIdentity, User
 from .microsoft_auth import (
     check_microsoft_nonce,
@@ -19,13 +23,15 @@ from .microsoft_auth import (
 from .routes_applications import router as applications_router
 from .routes_drives import router as drives_router
 from .routes_resumes import router as resumes_router
-from .schemas import SignupRequest, UserOut
+from .routes_student_updates import router as student_updates_router
+from .schemas import ChangePasswordRequest, SignupRequest, UserOut
 from .schemas_auth import MicrosoftTokenRequest
 
 
 def ensure_schema():
     upgrade_microsoft_identity(engine.url.database)
     upgrade_resume_feature(engine.url.database)
+    upgrade_student_updates(engine.url.database)
     Base.metadata.create_all(bind=engine)
 
 
@@ -87,6 +93,21 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 @app.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@app.put("/me/password")
+def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(data.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if data.new_password == data.current_password:
+        raise HTTPException(status_code=400, detail="Choose a new password different from your current one.")
+    current_user.password_hash = hash_password(data.new_password)
+    db.commit()
+    return {"message": "Password changed successfully."}
 
 
 @app.post("/auth/microsoft/nonce")
@@ -168,3 +189,4 @@ def microsoft_link(
 app.include_router(drives_router)
 app.include_router(applications_router)
 app.include_router(resumes_router)
+app.include_router(student_updates_router)

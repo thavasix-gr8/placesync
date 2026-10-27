@@ -7,9 +7,25 @@ import EmptyState from '../../components/EmptyState'
 import Skeleton from '../../components/Skeleton'
 import { formatDate } from '../../utils/formatters'
 
+function ApplicationTimeline({ status }) {
+  if (status === 'Rejected') {
+    return <div className="application-timeline rejected" aria-label="Applied, then rejected">
+      <span className="timeline-step reached">Applied</span><i /><span className="timeline-step rejected-step">Rejected</span>
+    </div>
+  }
+  const stages = ['Applied', 'Shortlisted', 'Selected']
+  const reached = status === 'Selected' ? 3 : status === 'Shortlisted' ? 2 : 1
+  return <div className="application-timeline" aria-label={`Application status: ${status}`}>
+    {stages.map((stage, index) => <span className="timeline-part" key={stage}>
+      <span className={`timeline-step ${index < reached ? 'reached' : ''}`}>{stage}</span>
+      {index < stages.length - 1 && <i className={index < reached - 1 ? 'reached' : ''} />}
+    </span>)}
+  </div>
+}
+
 export default function Applications() {
   const [applications, setApplications] = useState(null)
   useEffect(() => { apiRequest('/applications/me').then(setApplications).catch(() => setApplications([])) }, [])
   if (!applications) return <Skeleton count={3} />
-  return <><div className="page-heading"><div><p className="eyebrow">APPLICATION TRACKER</p><h1>My applications</h1></div></div>{applications.length === 0 ? <EmptyState title="No applications yet" text="Apply to an eligible drive and it will appear here." /> : <div className="application-list">{applications.map(application => <Card key={application.id} className="application-card"><div className="company-mark"><Building2 /></div><div className="application-info"><h2>{application.drive.company}</h2><p>{application.drive.job_role}</p><span><CalendarDays size={15} /> Applied {formatDate(application.applied_at)}</span></div><div className="application-status"><Badge status={application.status}>{application.status}</Badge><div className="timeline"><i className="done" /><i className={application.status !== 'Applied' ? 'done' : ''} /><i className={application.status === 'Selected' ? 'done' : ''} /></div></div></Card>)}</div>}</>
+  return <><div className="page-heading"><div><p className="eyebrow">APPLICATION TRACKER</p><h1>My applications</h1></div></div>{applications.length === 0 ? <EmptyState title="No applications yet" text="Apply to an eligible drive and it will appear here." /> : <div className="application-list">{applications.map(application => <Card key={application.id} className="application-card"><div className="company-mark"><Building2 /></div><div className="application-info"><h2>{application.drive.company}</h2><p>{application.drive.job_role}</p><span><CalendarDays size={15} /> Applied {formatDate(application.applied_at)}</span></div><div className="application-status"><Badge status={application.status}>{application.status}</Badge><ApplicationTimeline status={application.status} /></div></Card>)}</div>}</>
 }

@@ -31,31 +31,31 @@ def test_eligible_student_passes_all_rules():
 def test_low_cgpa_fails():
     eligible, reasons = check_eligibility(make_student(cgpa=6.9), make_drive())
     assert eligible is False
-    assert "CGPA 6.9 is below the required 7" in reasons
+    assert "CGPA below 7" in reasons
 
 
 def test_too_many_arrears_fails():
     eligible, reasons = check_eligibility(make_student(arrears=1), make_drive())
     assert eligible is False
-    assert "Arrears 1 exceed the allowed 0" in reasons
+    assert "Arrears above the limit (max 0)" in reasons
 
 
 def test_wrong_department_fails():
     eligible, reasons = check_eligibility(make_student(department="ECE"), make_drive())
     assert eligible is False
-    assert "Department ECE is not eligible for this drive" in reasons
+    assert "Department not eligible" in reasons
 
 
 def test_wrong_batch_fails():
     eligible, reasons = check_eligibility(make_student(batch="2025"), make_drive())
     assert eligible is False
-    assert "Batch 2025 does not match the required 2026" in reasons
+    assert "Batch not eligible" in reasons
 
 
 def test_passed_deadline_fails():
     eligible, reasons = check_eligibility(make_student(), make_drive(deadline=datetime.now() - timedelta(days=1)))
     assert eligible is False
-    assert "The application deadline has passed" in reasons
+    assert "Applications closed" in reasons
 
 
 def test_multiple_failures_return_all_reasons():

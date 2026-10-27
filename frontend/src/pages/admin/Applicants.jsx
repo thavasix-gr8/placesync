@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useOutletContext, useParams } from 'react-router-dom'
-import { Archive, ArrowLeft, Download, Eye, FileSpreadsheet, Users, X } from 'lucide-react'
+import { Archive, ArrowLeft, Download, Eye, FileSpreadsheet, Search, Users, X } from 'lucide-react'
 import { API_URL, apiRequest } from '../../api'
 import Badge from '../../components/Badge'
 import Button from '../../components/Button'
@@ -10,6 +10,11 @@ import Skeleton from '../../components/Skeleton'
 import { formatDate } from '../../utils/formatters'
 
 const statuses = ['Applied', 'Shortlisted', 'Rejected', 'Selected']
+const rowsPerPage = 25
+
+function normaliseSearchText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
+}
 
 export default function Applicants() {
   const { driveId } = useParams()
@@ -18,6 +23,8 @@ export default function Applicants() {
   const [loadingResumeId, setLoadingResumeId] = useState(null)
   const [resumeViewer, setResumeViewer] = useState(null)
   const [statusFilter, setStatusFilter] = useState('All')
+  const [searchText, setSearchText] = useState('')
+  const [page, setPage] = useState(1)
   const [selectedIds, setSelectedIds] = useState(() => new Set())
   const [bulkStatus, setBulkStatus] = useState('')
   const [exporting, setExporting] = useState(null)
@@ -84,9 +91,28 @@ export default function Applicants() {
     }
   }
 
-  const visibleApplications = applications?.filter(application =>
-    statusFilter === 'All' || application.status === statusFilter
-  ) || []
+  const visibleApplications = applications?.filter(application => {
+    const matchesStatus = statusFilter === 'All' || application.status === statusFilter
+    const student = application.student
+    const searchableText = normaliseSearchText([
+      student.name,
+      student.register_number,
+      student.email,
+      student.department,
+    ].join(' '))
+    const matchesSearch = !normaliseSearchText(searchText) || searchableText.includes(normaliseSearchText(searchText))
+    return matchesStatus && matchesSearch
+  }) || []
+  const pageCount = Math.max(1, Math.ceil(visibleApplications.length / rowsPerPage))
+  const currentPage = Math.min(page, pageCount)
+  const pageApplications = visibleApplications.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage)
+
+  function resetFilters(search, status) {
+    setSearchText(search)
+    setStatusFilter(status)
+    setPage(1)
+    setSelectedIds(new Set())
+  }
 
   function toggleApplication(id) {
     setSelectedIds(current => {
@@ -100,7 +126,7 @@ export default function Applicants() {
   function toggleVisibleApplications(checked) {
     setSelectedIds(current => {
       const next = new Set(current)
-      visibleApplications.forEach(application => {
+      pageApplications.forEach(application => {
         if (checked) next.add(application.id)
         else next.delete(application.id)
       })
@@ -179,11 +205,26 @@ export default function Applicants() {
       </Button>
     </div>
     <div className="applicant-table-tools">
-      <label>Status filter
-        <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
-          {['All', 'Applied', 'Shortlisted', 'Selected', 'Rejected'].map(status => <option key={status}>{status}</option>)}
-        </select>
-      </label>
+      <div className="applicant-filter-controls">
+        <label>Status filter
+          <select value={statusFilter} onChange={event => resetFilters(searchText, event.target.value)}>
+            {['All', 'Applied', 'Shortlisted', 'Selected', 'Rejected'].map(status => <option key={status}>{status}</option>)}
+          </select>
+        </label>
+        <label className="admin-applicant-search">Search applicants
+          <span className="admin-applicant-search-input">
+            <Search size={17} aria-hidden="true" />
+            <input
+              type="text"
+              value={searchText}
+              placeholder="Search name, register number, email or department"
+              onChange={event => resetFilters(event.target.value, statusFilter)}
+              aria-label="Search applicants by name, register number, email or department"
+            />
+            {searchText && <button className="icon-button" type="button" aria-label="Clear search" onClick={() => resetFilters('', statusFilter)}><X size={15} /></button>}
+          </span>
+        </label>
+      </div>
       <div className="bulk-status-controls">
         <span>{selectedIds.size} selected</span>
         <select value={bulkStatus} onChange={event => setBulkStatus(event.target.value)} aria-label="Change selected applicants to status">
@@ -193,16 +234,17 @@ export default function Applicants() {
         <Button type="button" variant="ghost" disabled={!bulkStatus || selectedIds.size === 0} onClick={changeSelectedStatus}>Apply</Button>
       </div>
     </div>
+    <p className="applicant-result-count">Showing {pageApplications.length} of {visibleApplications.length} applicants</p>
     <Card className="table-card">
       {applications.length === 0 ? <EmptyState title="No applicants yet" text="Applications for this drive will appear here." /> : visibleApplications.length === 0 ?
-        <EmptyState title="No applications with this status" text="Choose another status filter to see applicants." /> :
+        <div className="applicant-search-empty"><EmptyState title="No applicants match your search" text="Try a different name, register number, email or department." /><Button type="button" variant="ghost" onClick={() => resetFilters('', 'All')}>Clear search</Button></div> :
         <div className="table-wrap">
           <table className="applicants-table">
             <thead><tr>
-              <th><input type="checkbox" aria-label="Select all visible applicants" checked={visibleApplications.length > 0 && visibleApplications.every(application => selectedIds.has(application.id))} onChange={event => toggleVisibleApplications(event.target.checked)} /></th>
+              <th><input type="checkbox" aria-label="Select all applicants on this page" checked={pageApplications.length > 0 && pageApplications.every(application => selectedIds.has(application.id))} onChange={event => toggleVisibleApplications(event.target.checked)} /></th>
               <th>Student</th><th>Register number</th><th>Department</th><th>CGPA</th><th>Arrears</th><th>Applied</th><th>Status</th><th>Resume</th>
             </tr></thead>
-            <tbody>{visibleApplications.map(application => <tr key={application.id}>
+            <tbody>{pageApplications.map(application => <tr key={application.id}>
               <td><input type="checkbox" aria-label={`Select ${application.student.name}`} checked={selectedIds.has(application.id)} onChange={() => toggleApplication(application.id)} /></td>
               <td><strong>{application.student.name}</strong><small>{application.student.email}</small></td>
               <td>{application.student.register_number}</td>
@@ -227,6 +269,11 @@ export default function Applicants() {
             </tr>)}</tbody>
           </table>
         </div>}
+      {visibleApplications.length > 0 && <div className="applicant-pagination">
+        <Button type="button" variant="ghost" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>Previous</Button>
+        <span>Page {currentPage} of {pageCount}</span>
+        <Button type="button" variant="ghost" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>Next</Button>
+      </div>}
     </Card>
     <div className="admin-helper"><Users size={18} /> Status changes are shown to students immediately.</div>
     {resumeViewer && <div className="resume-preview-overlay" role="presentation" onClick={() => setResumeViewer(null)}>

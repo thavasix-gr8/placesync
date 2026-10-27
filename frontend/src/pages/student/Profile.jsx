@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Eye, FileText, Save, X } from 'lucide-react'
+import { CheckCircle2, Eye, EyeOff, FileText, Save, X } from 'lucide-react'
 import { useOutletContext } from 'react-router-dom'
 import { API_URL, apiRequest } from '../../api'
 import Button from '../../components/Button'
@@ -19,6 +19,11 @@ export default function Profile() {
   const [resumeStatus, setResumeStatus] = useState(null)
   const [viewingResume, setViewingResume] = useState(false)
   const [resumeViewer, setResumeViewer] = useState(null)
+  const [resumeLoaded, setResumeLoaded] = useState(false)
+  const [passwordForm, setPasswordForm] = useState({ current_password: '', new_password: '', confirm_password: '' })
+  const [passwordVisibility, setPasswordVisibility] = useState({ current: false, next: false, confirm: false })
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordStatus, setPasswordStatus] = useState(null)
   const resumeInput = useRef(null)
   const userId = user?.id
 
@@ -27,7 +32,7 @@ export default function Profile() {
   }, [user])
 
   useEffect(() => {
-    if (userId) apiRequest('/resumes/me').then(setResume).catch(() => setResume(null))
+    if (userId) apiRequest('/resumes/me').then(setResume).catch(() => setResume(null)).finally(() => setResumeLoaded(true))
   }, [userId])
 
   useEffect(() => {
@@ -57,6 +62,47 @@ export default function Profile() {
       setSaving(false)
     }
   }
+
+  async function submitPasswordChange(event) {
+    event.preventDefault()
+    setPasswordStatus(null)
+    if (passwordForm.new_password !== passwordForm.confirm_password) {
+      setPasswordStatus({ type: 'error', message: 'The new passwords do not match.' })
+      return
+    }
+    setChangingPassword(true)
+    try {
+      const result = await apiRequest('/me/password', {
+        method: 'PUT',
+        body: JSON.stringify({
+          current_password: passwordForm.current_password,
+          new_password: passwordForm.new_password,
+        }),
+      })
+      setPasswordForm({ current_password: '', new_password: '', confirm_password: '' })
+      setPasswordStatus({ type: 'success', message: result.message })
+      showToast('Password changed successfully.')
+    } catch (error) {
+      setPasswordStatus({ type: 'error', message: error.message })
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+
+  function togglePassword(field) {
+    setPasswordVisibility(current => ({ ...current, [field]: !current[field] }))
+  }
+
+  const completenessItems = [
+    ['department', form.department, 'add your department'],
+    ['batch', form.batch, 'add your batch'],
+    ['CGPA', form.cgpa, 'add your CGPA'],
+    ['arrears', form.arrears, 'add your arrears'],
+    ['resume', Boolean(resume), 'upload a resume to finish'],
+  ]
+  const completedItems = completenessItems.filter(([, value]) => value !== null && value !== undefined && value !== '' && value !== false).length
+  const completeness = Math.round((completedItems / completenessItems.length) * 100)
+  const missingItem = completenessItems.find(([, value]) => value === null || value === undefined || value === '' || value === false)
 
   function selectResume(event) {
     const file = event.target.files?.[0]
@@ -131,7 +177,7 @@ export default function Profile() {
     }
   }
 
-  return <>
+  return <div className="student-profile-page">
     <div className="page-heading">
       <div>
         <p className="eyebrow">STUDENT PROFILE</p>
@@ -139,18 +185,53 @@ export default function Profile() {
         <p>Your CGPA, arrears, department and batch decide drive eligibility.</p>
       </div>
     </div>
+    <div className="student-profile-cards">
     <Card className="profile-card">
       <div className="profile-name">
         <h2>{user.name}</h2>
         <p>{user.email} · {user.register_number}</p>
       </div>
-      <form onSubmit={submit} className="form-grid">
+      {resumeLoaded && <div className="profile-completeness profile-completeness-profile">
+        <div className="profile-completeness-heading">
+          <strong>{completeness === 100 ? <><CheckCircle2 size={16} /> Profile complete</> : `Profile ${completeness}% done: ${missingItem?.[2]}.`}</strong>
+          <span>{completeness}%</span>
+        </div>
+        <div className="profile-progress-track" role="progressbar" aria-valuenow={completeness} aria-valuemin="0" aria-valuemax="100" aria-label={`Profile ${completeness}% complete`}>
+          <span style={{ width: `${completeness}%` }} />
+        </div>
+      </div>}
+      <form onSubmit={submit} className="form-grid profile-details-form">
         <label>Department<input name="department" value={form.department} onChange={change} required /></label>
         <label>Batch<input name="batch" value={form.batch} onChange={change} required /></label>
         <label>CGPA<input name="cgpa" type="number" min="0" max="10" step="0.01" value={form.cgpa} onChange={change} required /></label>
         <label>Arrears<input name="arrears" type="number" min="0" value={form.arrears} onChange={change} required /></label>
-        <Button disabled={saving}>{saving ? 'Saving...' : <><Save size={16} /> Save profile</>}</Button>
+        <Button className="profile-save-button" disabled={saving}>{saving ? 'Saving...' : <><Save size={16} /> Save profile</>}</Button>
       </form>
+    </Card>
+    <Card className="profile-card password-change-card">
+      <h2>Change password</h2>
+      <form className="form-grid password-change-form" onSubmit={submitPasswordChange}>
+        {[
+          ['current_password', 'Current password', 'current'],
+          ['new_password', 'New password', 'next'],
+          ['confirm_password', 'Confirm new password', 'confirm'],
+        ].map(([field, label, visibilityKey]) => <label key={field}>{label}
+          <span className="password-input-wrap">
+            <input
+              type={passwordVisibility[visibilityKey] ? 'text' : 'password'}
+              value={passwordForm[field]}
+              onChange={event => setPasswordForm(current => ({ ...current, [field]: event.target.value }))}
+              minLength={field === 'current_password' ? undefined : 8}
+              required
+            />
+            <button className="password-toggle" type="button" aria-label={`${passwordVisibility[visibilityKey] ? 'Hide' : 'Show'} password`} onClick={() => togglePassword(visibilityKey)}>
+              {passwordVisibility[visibilityKey] ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </span>
+        </label>)}
+        <Button className="password-change-submit" disabled={changingPassword}>{changingPassword ? 'Changing…' : 'Change password'}</Button>
+      </form>
+      {passwordStatus && <p className={`password-change-status ${passwordStatus.type}`} role={passwordStatus.type === 'error' ? 'alert' : 'status'}>{passwordStatus.message}</p>}
     </Card>
     <Card className="profile-card resume-card">
       <div className="resume-card-heading">
@@ -181,6 +262,7 @@ export default function Profile() {
       </form>
       {resumeStatus && <p className={`resume-upload-status ${resumeStatus.type}`} role={resumeStatus.type === 'error' ? 'alert' : 'status'}>{resumeStatus.message}</p>}
     </Card>
+    </div>
     {resumeViewer && <div className="resume-preview-overlay" role="presentation" onClick={() => setResumeViewer(null)}>
       <section className="resume-preview-modal" role="dialog" aria-modal="true" aria-label={`${resumeViewer.filename} preview`} onClick={event => event.stopPropagation()}>
         <div className="resume-preview-header">
@@ -190,5 +272,5 @@ export default function Profile() {
         <iframe title="Resume preview" src={resumeViewer.url} />
       </section>
     </div>}
-  </>
+  </div>
 }

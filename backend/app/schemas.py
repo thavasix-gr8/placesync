@@ -36,6 +36,11 @@ class StudentUpdate(BaseModel):
     arrears: int | None = Field(default=None, ge=0)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class DriveCreate(BaseModel):
     company: str
     job_role: str
@@ -109,3 +114,27 @@ class ResumeOut(BaseModel):
     id: int
     filename: str
     uploaded_at: datetime
+
+
+class NotificationOut(BaseModel):
+    id: int
+    message: str
+    is_read: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AnnouncementCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    message: str = Field(min_length=1, max_length=2000)
+    drive_id: int | None = None
+
+
+class AnnouncementOut(BaseModel):
+    id: int
+    title: str
+    message: str
+    created_at: datetime
+    drive_id: int | None = None
+    drive_company: str | None = None
