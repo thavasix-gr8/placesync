@@ -6,7 +6,8 @@ const studentLinks = [
   ['My applications', '/student/applications', FileText], ['My profile', '/student/profile', UserRound],
 ]
 const adminLinks = [
-  ['Dashboard', '/admin/dashboard', BarChart3], ['Manage drives', '/admin/drives', PlusCircle],
+  ['Dashboard', '/admin/dashboard', BarChart3], ['Applicants', '/admin/applicants', Users],
+  ['Manage drives', '/admin/drives', PlusCircle],
 ]
 
 export default function Sidebar({ role, open, close }) {
@@ -14,6 +15,5 @@ export default function Sidebar({ role, open, close }) {
   return <aside className={`sidebar ${open ? 'open' : ''}`}>
     <div className="sidebar-title">{role === 'admin' ? 'Admin panel' : 'Student panel'}</div>
     <nav>{links.map(([label, path, Icon]) => <NavLink key={path} to={path} onClick={close}><Icon size={18} />{label}</NavLink>)}</nav>
-    {role === 'admin' && <p className="sidebar-tip"><Users size={16} />Open a drive to see applicants.</p>}
   </aside>
 }

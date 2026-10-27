@@ -22,6 +22,7 @@ class User(Base):
 
     applications = relationship("Application", back_populates="student")
     microsoft_identity = relationship("MicrosoftIdentity", back_populates="user", uselist=False)
+    resumes = relationship("StudentResume", back_populates="student")
 
 
 class MicrosoftIdentity(Base):
@@ -43,6 +44,19 @@ class MicrosoftAuthNonce(Base):
     expires_at = Column(DateTime, nullable=False)
 
 
+class StudentResume(Base):
+    __tablename__ = "student_resumes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    storage_name = Column(String, nullable=False, unique=True)
+    original_filename = Column(String, nullable=False)
+    uploaded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    student = relationship("User", back_populates="resumes")
+    applications = relationship("Application", back_populates="resume")
+
+
 class Drive(Base):
     __tablename__ = "drives"
 
@@ -55,8 +69,11 @@ class Drive(Base):
     max_arrears = Column(Integer, nullable=False)
     allowed_departments = Column(String, default="", nullable=False)
     batch = Column(String, default="", nullable=False)
+    applicant_count = Column(Integer, nullable=False, default=0, server_default="0")
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     applications = relationship("Application", back_populates="drive")
+    created_by = relationship("User", foreign_keys=[created_by_id])
 
 
 class Application(Base):
@@ -67,6 +84,8 @@ class Application(Base):
     drive_id = Column(Integer, ForeignKey("drives.id"), nullable=False)
     status = Column(String, nullable=False, default="Applied")
     applied_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    resume_id = Column(Integer, ForeignKey("student_resumes.id"), nullable=True)
 
     student = relationship("User", back_populates="applications")
     drive = relationship("Drive", back_populates="applications")
+    resume = relationship("StudentResume", back_populates="applications")

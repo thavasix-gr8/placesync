@@ -60,6 +60,7 @@ class DriveUpdate(BaseModel):
 
 class DriveOut(DriveCreate):
     id: int
+    applicant_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -70,6 +71,7 @@ class ApplicationOut(BaseModel):
     drive_id: int
     status: str
     applied_at: datetime
+    resume_id: int | None = None
     drive: DriveOut
 
     model_config = ConfigDict(from_attributes=True)
@@ -81,6 +83,7 @@ class ApplicationApplicantOut(BaseModel):
     drive_id: int
     status: str
     applied_at: datetime
+    resume_id: int | None = None
     student: UserOut
 
     model_config = ConfigDict(from_attributes=True)
@@ -90,8 +93,19 @@ class ApplicationStatusUpdate(BaseModel):
     status: Literal["Applied", "Shortlisted", "Rejected", "Selected"]
 
 
+class BulkApplicationStatusUpdate(BaseModel):
+    application_ids: list[int] = Field(min_length=1)
+    status: Literal["Shortlisted", "Selected", "Rejected"]
+
+
 class StatsOut(BaseModel):
     total_drives: int
     total_applications: int
     shortlisted: int
     selected: int
+
+
+class ResumeOut(BaseModel):
+    id: int
+    filename: str
+    uploaded_at: datetime

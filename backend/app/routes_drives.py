@@ -19,7 +19,7 @@ def get_drive_or_404(drive_id: int, db: Session) -> Drive:
 
 @router.post("/drives", response_model=DriveOut, status_code=status.HTTP_201_CREATED)
 def create_drive(data: DriveCreate, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
-    drive = Drive(**data.model_dump())
+    drive = Drive(**data.model_dump(), created_by_id=current_user.id)
     db.add(drive)
     db.commit()
     db.refresh(drive)

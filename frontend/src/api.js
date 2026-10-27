@@ -3,9 +3,10 @@ export const API_URL = 'http://localhost:8000'
 export async function apiRequest(path, options = {}) {
   const token = localStorage.getItem('token')
   const headers = { ...(options.headers || {}) }
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
 
   if (token && !headers.Authorization) headers.Authorization = `Bearer ${token}`
-  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
+  if (options.body && !isFormData && !headers['Content-Type']) headers['Content-Type'] = 'application/json'
 
   const response = await fetch(`${API_URL}${path}`, { ...options, headers })
   const data = response.status === 204 ? null : await response.json()

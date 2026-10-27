@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .auth import create_token, get_current_user, hash_password, verify_password
 from .database import Base, engine, get_db
-from .migrations import upgrade_microsoft_identity
+from .migrations import upgrade_microsoft_identity, upgrade_resume_feature
 from .models import MicrosoftIdentity, User
 from .microsoft_auth import (
     check_microsoft_nonce,
@@ -18,12 +18,14 @@ from .microsoft_auth import (
 )
 from .routes_applications import router as applications_router
 from .routes_drives import router as drives_router
+from .routes_resumes import router as resumes_router
 from .schemas import SignupRequest, UserOut
 from .schemas_auth import MicrosoftTokenRequest
 
 
 def ensure_schema():
     upgrade_microsoft_identity(engine.url.database)
+    upgrade_resume_feature(engine.url.database)
     Base.metadata.create_all(bind=engine)
 
 
@@ -41,6 +43,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Resumes-Skipped"],
 )
 
 
@@ -164,3 +167,4 @@ def microsoft_link(
 
 app.include_router(drives_router)
 app.include_router(applications_router)
+app.include_router(resumes_router)
